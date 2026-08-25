@@ -3,27 +3,46 @@ import type { Request, Response } from "express";
 let app: any = null;
 let bootError: any = null;
 
-try {
-  // Retrieve 'app' from our pre-compiled production bundle which resolves all relative dependencies
-  // @ts-ignore
-  const serverModule = await import("../dist/server.cjs");
-  app = serverModule.app;
-  console.log("[BOOT] Vercel Serverless Function loaded server.cjs bundle successfully.");
-} catch (err: any) {
-  console.error("[BOOT ERROR] Failed to load server.cjs bundle:", err);
-  bootError = {
-    message: err.message || String(err),
-    stack: err.stack ? err.stack.split("\n") : []
-  };
+async function getAppInstance() {
+  if (app) return app;
+  try {
+    // 1. Try to load compiled server.cjs bundle
+    // @ts-ignore
+    const serverModule = await import("../dist/server.cjs");
+    app = serverModule.app;
+    console.log("[BOOT] Vercel Serverless Function loaded server.cjs bundle successfully.");
+    return app;
+  } catch (err: any) {
+    console.warn("[BOOT] Failed to load server.cjs bundle, falling back to direct server module:", err.message);
+    try {
+      // 2. Direct fallback to server.ts
+      // @ts-ignore
+      const directModule = await import("../server.ts");
+      app = directModule.app;
+      return app;
+    } catch (fallbackErr: any) {
+      console.error("[BOOT ERROR] Failed to load both server.cjs and server.ts:", fallbackErr);
+      bootError = {
+        message: fallbackErr.message || String(fallbackErr),
+        stack: fallbackErr.stack ? fallbackErr.stack.split("\n") : []
+      };
+      return null;
+    }
+  }
 }
 
+// Initial boot attempt
+getAppInstance().catch(() => {});
+
 export default async function handler(req: any, res: any) {
+  const activeApp = await getAppInstance();
+
   // Self-Diagnostic Startup Info for Vercel Serverless environment
   const urlPath = req.url || "";
   if (urlPath === "/api/debug-env" || urlPath === "/api/health-diagnostic") {
     return res.status(200).json({
       diagnostics: "high-availability-wrapper",
-      serverBooted: !!app,
+      serverBooted: !!activeApp,
       bootError,
       env: {
         NODE_ENV: process.env.NODE_ENV || "not-set",
@@ -34,16 +53,16 @@ export default async function handler(req: any, res: any) {
     });
   }
 
-  if (bootError) {
+  if (bootError && !activeApp) {
     return res.status(500).json({
       error: "Vercel Boot Failure",
       message: bootError.message,
       stack: bootError.stack,
-      guidance: "High-availability server bundle server.cjs failed to load. Please verify your build logs and environment variables."
+      guidance: "High-availability server bundle failed to load. Please verify your build logs and environment variables."
     });
   }
 
-  if (!app) {
+  if (!activeApp) {
     return res.status(500).json({
       error: "Vercel Server Uninitialized",
       message: "The Express app instance is not initialized."
@@ -52,7 +71,7 @@ export default async function handler(req: any, res: any) {
 
   // Pass request to the Express application
   try {
-    return app(req, res);
+    return activeApp(req, res);
   } catch (err: any) {
     console.error("[VERCEL EXCEPTION DURING REQUEST]:", err);
     return res.status(500).json({
