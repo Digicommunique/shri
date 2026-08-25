@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "name": "enterprise-whatsapp-crm",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/socket.io/(.*)",
+      "destination": "http://your-ubuntu-vps-ip:3000/socket.io/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/$1"
+    }
+  ]
+}
