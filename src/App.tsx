@@ -73,7 +73,7 @@ import {
 import { cn } from './lib/utils';
 import { HospitalEntry, DairyEntry, Template, MessageLog, MediaItem } from './types';
 import WhatsAppCRM from './components/WhatsAppCRM';
-import { supabase } from './lib/supabase';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 // --- Components ---
 
@@ -551,27 +551,29 @@ export default function App() {
         });
 
       } catch (err: any) {
-        console.warn("[DIAGNOSTICS] Backend ping deferred, checking direct Supabase connection...", err);
-        try {
-          const { count, error: sbErr } = await supabase.from('hospital_entries').select('id', { count: 'exact', head: true });
-          if (!sbErr) {
-            setDbStatus({
-              apiStatus: 'online',
-              supabaseConfigured: true,
-              supabaseReachable: true,
-              usingVpsRedirect: false,
-              vpsUrlUsed: '',
-              vpsReached: true,
-              errorDetails: 'Connected directly to Supabase cloud database'
-            });
-            return;
-          }
-        } catch (directErr) {}
+        console.warn("[DIAGNOSTICS] Backend ping deferred:", err);
+        if (isSupabaseConfigured()) {
+          try {
+            const { count, error: sbErr } = await supabase.from('hospital_entries').select('id', { count: 'exact', head: true });
+            if (!sbErr) {
+              setDbStatus({
+                apiStatus: 'online',
+                supabaseConfigured: true,
+                supabaseReachable: true,
+                usingVpsRedirect: false,
+                vpsUrlUsed: '',
+                vpsReached: true,
+                errorDetails: 'Connected directly to Supabase cloud database'
+              });
+              return;
+            }
+          } catch (directErr) {}
+        }
 
         setDbStatus({
           apiStatus: 'online',
-          supabaseConfigured: true,
-          supabaseReachable: true,
+          supabaseConfigured: isSupabaseConfigured(),
+          supabaseReachable: false,
           usingVpsRedirect: false,
           vpsUrlUsed: '',
           vpsReached: false,
@@ -853,19 +855,23 @@ export default function App() {
             toast.success("Entry deleted successfully", { icon: '🗑️' });
             await fetchData();
           } else {
-            const tableName = activeModule === 'Hospital' ? 'hospital_entries' : 'dairy_entries';
-            const { error: delErr } = await supabase.from(tableName).delete().eq('id', id);
-            if (!delErr) {
-              toast.success("Entry deleted successfully", { icon: '🗑️' });
-              await fetchData();
-            } else {
-              const errData = await res.json().catch(() => ({}));
-              toast.error(`Failed to delete: ${errData.message || 'Server error'}`);
+            if (isSupabaseConfigured()) {
+              const tableName = activeModule === 'Hospital' ? 'hospital_entries' : 'dairy_entries';
+              const { error: delErr } = await supabase.from(tableName).delete().eq('id', id);
+              if (!delErr) {
+                toast.success("Entry deleted successfully", { icon: '🗑️' });
+                await fetchData();
+                return;
+              }
             }
+            const errData = await res.json().catch(() => ({}));
+            toast.error(`Failed to delete: ${errData.message || 'Server error'}`);
           }
         } catch (err) {
-          const tableName = activeModule === 'Hospital' ? 'hospital_entries' : 'dairy_entries';
-          await supabase.from(tableName).delete().eq('id', id);
+          if (isSupabaseConfigured()) {
+            const tableName = activeModule === 'Hospital' ? 'hospital_entries' : 'dairy_entries';
+            await supabase.from(tableName).delete().eq('id', id);
+          }
           toast.success("Entry deleted successfully", { icon: '🗑️' });
           await fetchData();
         } finally {
@@ -913,7 +919,9 @@ export default function App() {
     district: '',
     block: '',
     pincode: '',
-    search: ''
+    search: '',
+    startDate: '',
+    endDate: ''
   });
 
   const [appliedReportFilters, setAppliedReportFilters] = useState({
@@ -923,7 +931,9 @@ export default function App() {
     district: '',
     block: '',
     pincode: '',
-    search: ''
+    search: '',
+    startDate: '',
+    endDate: ''
   });
 
   // Helper to get districts filtered by selected state
@@ -1041,6 +1051,9 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [dataStartDate, setDataStartDate] = useState('');
+  const [dataEndDate, setDataEndDate] = useState('');
+  const [showDataFilter, setShowDataFilter] = useState(false);
   const [formFiles, setFormFiles] = useState<{ photo?: string; id_card?: string; aadhaar_card?: string }>({});
   const [locationData, setLocationData] = useState<{ 
     city: string; 
@@ -1788,6 +1801,7 @@ export default function App() {
   }, [showBulkGreetingsModal]);
 
   const fetchDirectFromSupabase = async (key: string, setter: any) => {
+    if (!isSupabaseConfigured()) return;
     try {
       if (key === 'hospital') {
         const { data, error } = await supabase.from('hospital_entries').select('*').order('created_at', { ascending: false }).limit(2000);
@@ -1844,25 +1858,29 @@ export default function App() {
           setHospitalCount(cntData.hospital);
           setDairyCount(cntData.dairy);
         } else {
-          const [hC, dC] = await Promise.all([
-            supabase.from('hospital_entries').select('id', { count: 'exact', head: true }),
-            supabase.from('dairy_entries').select('id', { count: 'exact', head: true })
-          ]);
-          if (hC.count !== null && hC.count !== undefined) setHospitalCount(hC.count);
-          if (dC.count !== null && dC.count !== undefined) setDairyCount(dC.count);
+          if (isSupabaseConfigured()) {
+            const [hC, dC] = await Promise.all([
+              supabase.from('hospital_entries').select('id', { count: 'exact', head: true }),
+              supabase.from('dairy_entries').select('id', { count: 'exact', head: true })
+            ]);
+            if (hC.count !== null && hC.count !== undefined) setHospitalCount(hC.count);
+            if (dC.count !== null && dC.count !== undefined) setDairyCount(dC.count);
+          }
         }
       } catch (cntErr) {
-        try {
-          const [hC, dC] = await Promise.all([
-            supabase.from('hospital_entries').select('id', { count: 'exact', head: true }),
-            supabase.from('dairy_entries').select('id', { count: 'exact', head: true })
-          ]);
-          if (hC.count !== null && hC.count !== undefined) setHospitalCount(hC.count);
-          if (dC.count !== null && dC.count !== undefined) setDairyCount(dC.count);
-        } catch {
-          setHospitalCount((prev) => prev !== null ? prev : (hospitalEntries.length || null));
-          setDairyCount((prev) => prev !== null ? prev : (dairyEntries.length || null));
+        if (isSupabaseConfigured()) {
+          try {
+            const [hC, dC] = await Promise.all([
+              supabase.from('hospital_entries').select('id', { count: 'exact', head: true }),
+              supabase.from('dairy_entries').select('id', { count: 'exact', head: true })
+            ]);
+            if (hC.count !== null && hC.count !== undefined) setHospitalCount(hC.count);
+            if (dC.count !== null && dC.count !== undefined) setDairyCount(dC.count);
+            return;
+          } catch {}
         }
+        setHospitalCount((prev) => prev !== null ? prev : (hospitalEntries.length || null));
+        setDairyCount((prev) => prev !== null ? prev : (dairyEntries.length || null));
       }
 
       await Promise.all(endpoints.map(async (ep) => {
@@ -1975,19 +1993,23 @@ export default function App() {
         toast.success("Settings saved successfully");
         fetchData();
       } else {
-        // Direct Supabase upsert fallback
-        await supabase.from('settings').upsert({ module: activeModule, ...data }, { onConflict: 'module' });
+        if (isSupabaseConfigured()) {
+          // Direct Supabase upsert fallback
+          await supabase.from('settings').upsert({ module: activeModule, ...data }, { onConflict: 'module' });
+        }
         toast.success("Settings saved successfully");
         fetchData();
       }
     } catch (err) {
-      try {
-        await supabase.from('settings').upsert({ module: activeModule, ...data }, { onConflict: 'module' });
-        toast.success("Settings saved successfully");
-        fetchData();
-      } catch {
-        toast.error("Failed to save settings");
+      if (isSupabaseConfigured()) {
+        try {
+          await supabase.from('settings').upsert({ module: activeModule, ...data }, { onConflict: 'module' });
+          toast.success("Settings saved successfully");
+          fetchData();
+          return;
+        } catch {}
       }
+      toast.error("Failed to save settings");
     }
   };
 
@@ -2200,14 +2222,16 @@ export default function App() {
 
   const saveToLocalFallback = async (data: any) => {
     const tableName = activeModule === 'Hospital' ? 'hospital_entries' : 'dairy_entries';
-    try {
-      if (editingEntry) {
-        await supabase.from(tableName).update(data).eq('id', editingEntry.id);
-      } else {
-        await supabase.from(tableName).insert([data]);
+    if (isSupabaseConfigured()) {
+      try {
+        if (editingEntry) {
+          await supabase.from(tableName).update(data).eq('id', editingEntry.id);
+        } else {
+          await supabase.from(tableName).insert([data]);
+        }
+      } catch (sbErr) {
+        console.warn("Direct Supabase save notice:", sbErr);
       }
-    } catch (sbErr) {
-      console.warn("Direct Supabase save notice:", sbErr);
     }
 
     const storageKey = activeModule === 'Hospital' ? 'local_hospital_entries' : 'local_dairy_entries';
@@ -2819,11 +2843,34 @@ export default function App() {
     }
   };
 
-  const filteredEntries = (Array.isArray(activeModule === 'Hospital' ? hospitalEntries : dairyEntries) ? (activeModule === 'Hospital' ? hospitalEntries : dairyEntries) : []).filter(e => 
-    String(e.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    String(e.phone || '').includes(searchTerm) ||
-    String((activeModule === 'Hospital' ? (e as HospitalEntry).village : (e as DairyEntry).village) || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEntries = (Array.isArray(activeModule === 'Hospital' ? hospitalEntries : dairyEntries) ? (activeModule === 'Hospital' ? hospitalEntries : dairyEntries) : []).filter(e => {
+    const matchesSearch = 
+      String(e.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+      String(e.phone || '').includes(searchTerm) ||
+      String((activeModule === 'Hospital' ? (e as HospitalEntry).village : (e as DairyEntry).village) || '').toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (dataStartDate || dataEndDate) {
+      if (!e.created_at) return false;
+      try {
+        const createdTime = new Date(e.created_at).getTime();
+        if (isNaN(createdTime)) return false;
+        if (dataStartDate) {
+          const startTime = new Date(dataStartDate + 'T00:00:00').getTime();
+          if (!isNaN(startTime) && createdTime < startTime) return false;
+        }
+        if (dataEndDate) {
+          const endTime = new Date(dataEndDate + 'T23:59:59.999').getTime();
+          if (!isNaN(endTime) && createdTime > endTime) return false;
+        }
+      } catch (err) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   const filteredReportEntries = (Array.isArray(activeModule === 'Hospital' ? hospitalEntries : dairyEntries) ? (activeModule === 'Hospital' ? hospitalEntries : dairyEntries) : []).filter(e => {
     const s = appliedReportFilters;
@@ -2859,7 +2906,29 @@ export default function App() {
     const matchesBlock = !blockVal || block.includes(blockVal) || fullText.includes(blockVal);
     const matchesPincode = !pincodeVal || pincode.includes(pincodeVal) || fullText.includes(pincodeVal);
     
-    return matchesSearch && matchesVillage && matchesPost && matchesState && matchesDistrict && matchesBlock && matchesPincode;
+    if (!(matchesSearch && matchesVillage && matchesPost && matchesState && matchesDistrict && matchesBlock && matchesPincode)) {
+      return false;
+    }
+
+    if (s.startDate || s.endDate) {
+      if (!e.created_at) return false;
+      try {
+        const createdTime = new Date(e.created_at).getTime();
+        if (isNaN(createdTime)) return false;
+        if (s.startDate) {
+          const startTime = new Date(s.startDate + 'T00:00:00').getTime();
+          if (!isNaN(startTime) && createdTime < startTime) return false;
+        }
+        if (s.endDate) {
+          const endTime = new Date(s.endDate + 'T23:59:59.999').getTime();
+          if (!isNaN(endTime) && createdTime > endTime) return false;
+        }
+      } catch (err) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   const getContactForLog = React.useCallback((phone: string) => {
@@ -2928,7 +2997,30 @@ export default function App() {
       const matchesBlock = !blockVal || block.includes(blockVal) || fullText.includes(blockVal);
       const matchesPincode = !pincodeVal || pincode.includes(pincodeVal) || fullText.includes(pincodeVal);
       
-      return matchesSearch && matchesVillage && matchesPost && matchesState && matchesDistrict && matchesBlock && matchesPincode;
+      if (!(matchesSearch && matchesVillage && matchesPost && matchesState && matchesDistrict && matchesBlock && matchesPincode)) {
+        return false;
+      }
+
+      if (s.startDate || s.endDate) {
+        const logDateStr = log.created_at || (contact as any)?.created_at;
+        if (!logDateStr) return false;
+        try {
+          const logTime = new Date(logDateStr).getTime();
+          if (isNaN(logTime)) return false;
+          if (s.startDate) {
+            const startTime = new Date(s.startDate + 'T00:00:00').getTime();
+            if (!isNaN(startTime) && logTime < startTime) return false;
+          }
+          if (s.endDate) {
+            const endTime = new Date(s.endDate + 'T23:59:59.999').getTime();
+            if (!isNaN(endTime) && logTime > endTime) return false;
+          }
+        } catch (err) {
+          return false;
+        }
+      }
+
+      return true;
     });
   }, [logs, appliedReportFilters, getContactForLog]);
 
@@ -3670,9 +3762,16 @@ export default function App() {
                       <FileBarChart size={16} />
                       Export PDF
                     </Button>
-                    <Button variant="secondary" className="flex items-center gap-2">
+                    <Button 
+                      variant={showDataFilter || dataStartDate || dataEndDate ? "primary" : "secondary"} 
+                      className="flex items-center gap-2 relative"
+                      onClick={() => setShowDataFilter(prev => !prev)}
+                    >
                       <Filter size={16} />
                       Filter
+                      {(dataStartDate || dataEndDate) && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1 right-1" />
+                      )}
                     </Button>
                     <Button 
                       variant="ghost" 
@@ -3682,6 +3781,58 @@ export default function App() {
                       <Trash2 size={16} />
                       Clear All
                     </Button>
+                  </div>
+                </div>
+
+                {/* Date Range Filter Bar for Data Management */}
+                <div className={`p-4 bg-zinc-50/80 border-b border-zinc-100 ${showDataFilter || dataStartDate || dataEndDate ? 'block' : 'hidden md:block'}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                        <Calendar size={14} className="text-zinc-400" />
+                        <span>Created Date Range:</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-zinc-500">From:</label>
+                        <input
+                          type="date"
+                          value={dataStartDate}
+                          onChange={(e) => setDataStartDate(e.target.value)}
+                          className="px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400"
+                          placeholder="Start date"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-zinc-500">To:</label>
+                        <input
+                          type="date"
+                          value={dataEndDate}
+                          onChange={(e) => setDataEndDate(e.target.value)}
+                          className="px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400"
+                          placeholder="End date"
+                        />
+                      </div>
+                      {(dataStartDate || dataEndDate) && (
+                        <button
+                          onClick={() => {
+                            setDataStartDate('');
+                            setDataEndDate('');
+                            toast.success("Date filter cleared");
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-zinc-600 bg-white border border-zinc-200 hover:bg-zinc-100 rounded-lg transition-all"
+                          title="Clear date filter"
+                        >
+                          <X size={12} />
+                          <span>Clear</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-xs text-zinc-500 font-medium">
+                      Showing <span className="font-bold text-zinc-900">{filteredEntries.length}</span> entries
+                      {(dataStartDate || dataEndDate) && (
+                        <span className="text-emerald-600 font-semibold ml-1">(date filtered)</span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -5092,6 +5243,30 @@ export default function App() {
                         onChange={(e) => setReportFilters({ ...reportFilters, pincode: e.target.value })}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                        <Calendar size={14} className="text-blue-600" />
+                        <span>Created From</span>
+                      </label>
+                      <input 
+                        type="date" 
+                        className="w-full px-4 py-2 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                        value={reportFilters.startDate}
+                        onChange={(e) => setReportFilters({ ...reportFilters, startDate: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                        <Calendar size={14} className="text-blue-600" />
+                        <span>Created To</span>
+                      </label>
+                      <input 
+                        type="date" 
+                        className="w-full px-4 py-2 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                        value={reportFilters.endDate}
+                        onChange={(e) => setReportFilters({ ...reportFilters, endDate: e.target.value })}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -5118,7 +5293,7 @@ export default function App() {
                       </button>
                       <button 
                         onClick={() => {
-                          const cleared = { village: '', post: '', state: '', district: '', block: '', pincode: '', search: '' };
+                          const cleared = { village: '', post: '', state: '', district: '', block: '', pincode: '', search: '', startDate: '', endDate: '' };
                           setReportFilters(cleared);
                           setAppliedReportFilters(cleared);
                           toast.success("Filters reset successfully!");
@@ -5892,6 +6067,30 @@ export default function App() {
                       onChange={(e) => setReportFilters({ ...reportFilters, pincode: e.target.value })}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                      <Calendar size={14} className={activeModule === 'Dairy' ? 'text-emerald-600' : 'text-blue-600'} />
+                      <span>Created From</span>
+                    </label>
+                    <input 
+                      type="date" 
+                      className="w-full px-4 py-2 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 focus:border-zinc-500 transition-all bg-white font-sans"
+                      value={reportFilters.startDate}
+                      onChange={(e) => setReportFilters({ ...reportFilters, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-zinc-900 flex items-center gap-1.5">
+                      <Calendar size={14} className={activeModule === 'Dairy' ? 'text-emerald-600' : 'text-blue-600'} />
+                      <span>Created To</span>
+                    </label>
+                    <input 
+                      type="date" 
+                      className="w-full px-4 py-2 rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 focus:border-zinc-500 transition-all bg-white font-sans"
+                      value={reportFilters.endDate}
+                      onChange={(e) => setReportFilters({ ...reportFilters, endDate: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -5918,7 +6117,7 @@ export default function App() {
                     </button>
                     <button 
                       onClick={() => {
-                        const cleared = { village: '', post: '', state: '', district: '', block: '', pincode: '', search: '' };
+                        const cleared = { village: '', post: '', state: '', district: '', block: '', pincode: '', search: '', startDate: '', endDate: '' };
                         setReportFilters(cleared);
                         setAppliedReportFilters(cleared);
                         toast.success("Filters reset successfully!");

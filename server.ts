@@ -17,42 +17,31 @@ const cleanEnvVar = (val: string | undefined): string => {
   return clean.trim();
 };
 
-const DEFAULT_SUPABASE_URL = "https://yfgdljzqicapjtzatiyk.supabase.co";
-const DEFAULT_SUPABASE_KEY = "sb_publishable_1fs-CnkmY9TeHi3rnM867A_vAOTiSQv";
-
-const envSupabaseUrl = cleanEnvVar(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
-const envSupabaseKey = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY);
-
-const supabaseUrl = (envSupabaseUrl && !envSupabaseUrl.includes("placeholder.supabase.co") && !envSupabaseUrl.includes("your-project-id")) 
-  ? envSupabaseUrl 
-  : DEFAULT_SUPABASE_URL;
-
-const supabaseKey = (envSupabaseKey && !envSupabaseKey.includes("placeholder_key") && !envSupabaseKey.includes("your-supabase-public-anon-key") && !envSupabaseKey.includes("your-supabase-service-role-key")) 
-  ? envSupabaseKey 
-  : DEFAULT_SUPABASE_KEY;
+const supabaseUrl = cleanEnvVar(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
+const supabaseKey = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY);
 
 // Self-Diagnostic Startup Info
 console.log(`[BOOT] Environment Diagnosis:`);
 console.log(`  - NODE_ENV: "${process.env.NODE_ENV}"`);
 console.log(`  - VERCEL env: "${process.env.VERCEL}"`);
-console.log(`  - SUPABASE_URL length: ${supabaseUrl.length}`);
+console.log(`  - SUPABASE_URL length: ${supabaseUrl ? supabaseUrl.length : 0}`);
 if (supabaseUrl) {
   console.log(`  - SUPABASE_URL starts with: "${supabaseUrl.substring(0, 15)}..."`);
 }
-console.log(`  - SUPABASE_KEY/SERVICE_ROLE length: ${supabaseKey.length}`);
+console.log(`  - SUPABASE_KEY/SERVICE_ROLE length: ${supabaseKey ? supabaseKey.length : 0}`);
 if (supabaseKey) {
   console.log(`  - SUPABASE_KEY starts with: "${supabaseKey.substring(0, 10)}..." (ends with: "...${supabaseKey.substring(supabaseKey.length - 6)}")`);
 }
 
 export const isSupabaseConfigured = (): boolean => {
   if (!supabaseUrl || !supabaseKey) return false;
-  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id")) return false;
+  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id") || supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
   if (supabaseKey.includes("placeholder_key") || supabaseKey.includes("your-supabase-public-anon-key") || supabaseKey.includes("your-supabase-service-role-key")) return false;
   return true;
 };
 
 if (!isSupabaseConfigured()) {
-  console.warn("WARNING: SUPABASE_URL or SUPABASE_KEY is missing or carries placeholder values. Operating in local-fallback storage mode.");
+  console.log("[STORAGE] Operating in high-speed local filesystem & in-memory storage mode.");
 } else {
   console.log("SUCCESS: Supabase URL and Key found and configured successfully.");
 }

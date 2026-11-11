@@ -19,7 +19,7 @@ const supabaseKey = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY || process
 
 export const isSupabaseConfigured = (): boolean => {
   if (!supabaseUrl || !supabaseKey) return false;
-  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id")) return false;
+  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id") || supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
   if (supabaseKey.includes("placeholder_key") || supabaseKey.includes("your-supabase-public-anon-key") || supabaseKey.includes("your-supabase-service-role-key")) return false;
   return true;
 };

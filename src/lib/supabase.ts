@@ -1,12 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const SUPABASE_URL = "https://yfgdljzqicapjtzatiyk.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_1fs-CnkmY9TeHi3rnM867A_vAOTiSQv";
+const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+
+export const isSupabaseConfigured = (): boolean => {
+  if (!envUrl || !envKey) return false;
+  if (envUrl.includes("placeholder.supabase.co") || envUrl.includes("your-project-id") || envUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
+  if (envKey.includes("placeholder_key") || envKey.includes("your-supabase-public-anon-key")) return false;
+  return true;
+};
+
+export const SUPABASE_URL = isSupabaseConfigured() ? envUrl : "https://placeholder.supabase.co";
+export const SUPABASE_ANON_KEY = isSupabaseConfigured() ? envKey : "placeholder_key";
 
 // Create client-side Supabase instance
 export const supabase = createClient(
-  (import.meta as any).env.VITE_SUPABASE_URL || SUPABASE_URL,
-  (import.meta as any).env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY,
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   {
     auth: {
       persistSession: false
