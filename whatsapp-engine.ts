@@ -17,21 +17,34 @@ const cleanEnvVar = (val: string | undefined): string => {
 const supabaseUrl = cleanEnvVar(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
 const supabaseKey = cleanEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY);
 
+let supabaseNetworkOnline = true;
+
 export const isSupabaseConfigured = (): boolean => {
   if (!supabaseUrl || !supabaseKey) return false;
-  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id") || supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
-  if (supabaseKey.includes("placeholder_key") || supabaseKey.includes("your-supabase-public-anon-key") || supabaseKey.includes("your-supabase-service-role-key")) return false;
+  if (
+    supabaseUrl.includes("placeholder.supabase.co") ||
+    supabaseUrl.includes("your-project-id") ||
+    supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co") ||
+    supabaseUrl.includes("yawpvchmwmngjxnulzgn.supabase.co")
+  ) {
+    return false;
+  }
+  if (
+    supabaseKey.includes("placeholder_key") ||
+    supabaseKey.includes("your-supabase-public-anon-key") ||
+    supabaseKey.includes("your-supabase-service-role-key")
+  ) {
+    return false;
+  }
+  if (!supabaseNetworkOnline) return false;
   return true;
 };
 
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const urlStr = typeof input === "string" ? input : (input instanceof URL ? input.toString() : (input as any).url);
   const method = init?.method || "GET";
-  
-  console.log(`[WHATSAPP-ENGINE OUTBOUND] -> ${method} ${urlStr}`);
 
   if (!isSupabaseConfigured()) {
-    console.warn(`[WHATSAPP-ENGINE CONFIG EXCEPTION] Supabase not configured. Blocking call to: ${urlStr}`);
     return new Response(JSON.stringify({
       code: "SUPABASE_NOT_CONFIGURED",
       message: "Supabase is not configured yet. Operating in local JSON filesystem/in-memory fallback mode.",
@@ -57,7 +70,8 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
     return response;
   } catch (err: any) {
-    console.error(`[WHATSAPP-ENGINE DNS/NETWORK CRASH] Failed to fetch Supabase endpoint: ${err.message || err}`);
+    supabaseNetworkOnline = false;
+    console.warn(`[WHATSAPP-ENGINE] Supabase endpoint unreachable (${err.message || err}). Operating in local fallback mode.`);
     return new Response(JSON.stringify({
       code: "SUPABASE_NETWORK_ERROR",
       message: err.message || "Network connection to Supabase failed",

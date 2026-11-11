@@ -5,7 +5,14 @@ const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = (): boolean => {
   if (!envUrl || !envKey) return false;
-  if (envUrl.includes("placeholder.supabase.co") || envUrl.includes("your-project-id") || envUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
+  if (
+    envUrl.includes("placeholder.supabase.co") ||
+    envUrl.includes("your-project-id") ||
+    envUrl.includes("yfgdljzqicapjtzatiyk.supabase.co") ||
+    envUrl.includes("yawpvchmwmngjxnulzgn.supabase.co")
+  ) {
+    return false;
+  }
   if (envKey.includes("placeholder_key") || envKey.includes("your-supabase-public-anon-key")) return false;
   return true;
 };

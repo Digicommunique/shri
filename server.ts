@@ -33,10 +33,26 @@ if (supabaseKey) {
   console.log(`  - SUPABASE_KEY starts with: "${supabaseKey.substring(0, 10)}..." (ends with: "...${supabaseKey.substring(supabaseKey.length - 6)}")`);
 }
 
+let supabaseNetworkOnline = true;
+
 export const isSupabaseConfigured = (): boolean => {
   if (!supabaseUrl || !supabaseKey) return false;
-  if (supabaseUrl.includes("placeholder.supabase.co") || supabaseUrl.includes("your-project-id") || supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co")) return false;
-  if (supabaseKey.includes("placeholder_key") || supabaseKey.includes("your-supabase-public-anon-key") || supabaseKey.includes("your-supabase-service-role-key")) return false;
+  if (
+    supabaseUrl.includes("placeholder.supabase.co") ||
+    supabaseUrl.includes("your-project-id") ||
+    supabaseUrl.includes("yfgdljzqicapjtzatiyk.supabase.co") ||
+    supabaseUrl.includes("yawpvchmwmngjxnulzgn.supabase.co")
+  ) {
+    return false;
+  }
+  if (
+    supabaseKey.includes("placeholder_key") ||
+    supabaseKey.includes("your-supabase-public-anon-key") ||
+    supabaseKey.includes("your-supabase-service-role-key")
+  ) {
+    return false;
+  }
+  if (!supabaseNetworkOnline) return false;
   return true;
 };
 
@@ -49,16 +65,8 @@ if (!isSupabaseConfigured()) {
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const urlStr = typeof input === "string" ? input : (input instanceof URL ? input.toString() : (input as any).url);
   const method = init?.method || "GET";
-  
-  console.log(`[SUPABASE API OUTBOUND] -> ${method} ${urlStr}`);
-  if (init?.body) {
-    try {
-      console.log(`[SUPABASE API PAYLOAD] -> ${String(init.body).substring(0, 500)}`);
-    } catch (e) {}
-  }
 
   if (!isSupabaseConfigured()) {
-    console.warn(`[SUPABASE CONFIG EXCEPTION] Attempted Supabase call but Supabase is NOT configured! Blocking: ${urlStr}`);
     return new Response(JSON.stringify({
       code: "SUPABASE_NOT_CONFIGURED",
       message: "Supabase is not configured yet. Operating in local JSON filesystem/in-memory fallback mode.",
@@ -88,7 +96,8 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
     return response;
   } catch (err: any) {
-    console.error(`[SUPABASE DNS/NETWORK CRASH] Failed to fetch Supabase endpoint: ${err.message || err}`);
+    supabaseNetworkOnline = false;
+    console.warn(`[STORAGE] Supabase endpoint unreachable (${err.message || err}). Operating in local fallback mode.`);
     return new Response(JSON.stringify({
       code: "SUPABASE_NETWORK_ERROR",
       message: err.message || "Network connection to Supabase failed",
@@ -219,7 +228,9 @@ async function startServer() {
           console.log(`[SEED] Finished seeding hospital_entries with ${fallbackHospitalEntries.length} records!`);
         }
       } else if (countHospError) {
-        console.warn("[SEED] Skipping hospital_entries seed or table does not exist yet (requires supabase_schema.sql to be executed):", countHospError.message);
+        if (countHospError.code !== 'SUPABASE_NETWORK_ERROR' && countHospError.code !== 'SUPABASE_NOT_CONFIGURED') {
+          console.warn("[SEED] Skipping hospital_entries seed or table does not exist yet (requires supabase_schema.sql to be executed):", countHospError.message);
+        }
       } else {
         console.log(`[SEED] hospital_entries table already contains data. Seeding skipped.`);
       }
@@ -250,7 +261,9 @@ async function startServer() {
           console.log(`[SEED] Finished seeding dairy_entries with ${fallbackDairyEntries.length} records!`);
         }
       } else if (countDairyError) {
-        console.warn("[SEED] Skipping dairy_entries seed or table does not exist yet:", countDairyError.message);
+        if (countDairyError.code !== 'SUPABASE_NETWORK_ERROR' && countDairyError.code !== 'SUPABASE_NOT_CONFIGURED') {
+          console.warn("[SEED] Skipping dairy_entries seed or table does not exist yet:", countDairyError.message);
+        }
       } else {
         console.log(`[SEED] dairy_entries table already contains data. Seeding skipped.`);
       }
@@ -290,7 +303,9 @@ async function startServer() {
           console.log("[SEED] Official line 7307433714 already registered in database.");
         }
       } else {
-        console.warn("[SEED] Skipping whatsapp_accounts seed or table does not exist yet:", fetchAccError.message);
+        if (fetchAccError.code !== 'SUPABASE_NETWORK_ERROR' && fetchAccError.code !== 'SUPABASE_NOT_CONFIGURED') {
+          console.warn("[SEED] Skipping whatsapp_accounts seed or table does not exist yet:", fetchAccError.message);
+        }
       }
     } catch (err) {
       console.error("[SEED] Error in auto-seeding routine:", err);
@@ -711,7 +726,7 @@ async function startServer() {
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
       if (error) {
-        if (error.code !== '42P01' && error.code !== 'SUPABASE_NOT_CONFIGURED') {
+        if (error.code !== '42P01' && error.code !== 'SUPABASE_NOT_CONFIGURED' && error.code !== 'SUPABASE_NETWORK_ERROR') {
           console.error(`Database fetch error at page ${page}:`, error);
           errorOccurred = true;
         }
@@ -1226,7 +1241,7 @@ async function startServer() {
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
       if (error) {
-        if (error.code !== '42P01' && error.code !== 'SUPABASE_NOT_CONFIGURED') {
+        if (error.code !== '42P01' && error.code !== 'SUPABASE_NOT_CONFIGURED' && error.code !== 'SUPABASE_NETWORK_ERROR') {
           console.error(`Database fetch error (Dairy) at page ${page}:`, error);
           errorOccurred = true;
         }
@@ -1363,7 +1378,9 @@ async function startServer() {
       .select('*')
       .eq('module', req.params.module);
     if (error) {
-      console.warn('Supabase templates fetch error, using fallback:', error);
+      if (error.code !== '42P01' && error.code !== 'SUPABASE_NOT_CONFIGURED' && error.code !== 'SUPABASE_NETWORK_ERROR') {
+        console.warn('Supabase templates fetch error, using fallback:', error);
+      }
       return res.json(filterFallback);
     }
     
